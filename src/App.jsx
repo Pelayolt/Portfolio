@@ -18,26 +18,29 @@ import {
   Send,
   Sparkles,
   Loader,
-  User // Importamos User para la sección Sobre mí
+  User
 } from 'lucide-react';
+
+// =============================================================================
+// 🔓 ZONA DE CONFIGURACIÓN
+// =============================================================================
+// Si quieres probarlo en local sin configurar archivos .env, pega tu clave aquí:
+const PUBLIC_DEMO_API_KEY = ""; 
+// =============================================================================
 
 // --- Servicio de IA (Gemini) ---
 const GeminiService = {
   async generateContent(prompt) {
+    let apiKey = PUBLIC_DEMO_API_KEY;
+    
+    try {
+      if (!apiKey) apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    } catch (e) { console.warn("No se pudo leer env vars"); }
 
     if (!apiKey) {
-      try {
-        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      } catch (e) {
-        // Ignoramos error si no estamos en entorno Vite estándar
-      }
+      return "⚠️ Error Config: No se detecta la API Key. Si estás en local, pégala en 'PUBLIC_DEMO_API_KEY'. Si estás en Vercel, asegura que has descomentado las líneas de 'import.meta.env'.";
     }
 
-    if (!apiKey) {
-      return "⚠️ Error: Falta la API Key. Por favor, abre el archivo App.jsx y pega tu clave de Google en la constante PUBLIC_DEMO_API_KEY al inicio del archivo.";
-    }
-
-    // Usamos el modelo público gratuito 'gemini-1.5-flash'
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
     try {
@@ -47,12 +50,16 @@ const GeminiService = {
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
       });
 
-      if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+      }
+
       const data = await response.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text || 'La IA no devolvió respuesta.';
     } catch (error) {
       console.error("Error Gemini:", error);
-      return `Error técnico: ${error.message}`;
+      return `Error de conexión: ${error.message}`;
     }
   },
 
@@ -68,7 +75,6 @@ const GeminiService = {
     Estilo: Breve, profesional y directo al grano.
     Si te preguntan algo que no sea sobre Pelayo, di amablemente que solo hablas de él.`;
     
-    // Historial reducido para ahorrar tokens
     const history = chatHistory.slice(-4).map(m => `${m.sender}: ${m.text}`).join('\n');
     return this.generateContent(`${context}\n\nHistorial:\n${history}\n\nUsuario: ${userMessage}\nPelayoAI:`);
   },
@@ -123,12 +129,18 @@ const Portfolio = () => {
   // Chat Scroll
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages, isChatOpen]);
 
-  // Handlers IA
+  // --- HANDLERS ---
+
   const handleSummarize = async (idx, title, desc) => {
     setLoadingSummaries(p => ({ ...p, [idx]: true }));
-    const text = await GeminiService.summarizeProject(title, desc);
-    setProjectSummaries(p => ({ ...p, [idx]: text }));
-    setLoadingSummaries(p => ({ ...p, [idx]: false }));
+    try {
+      const text = await GeminiService.summarizeProject(title, desc);
+      setProjectSummaries(p => ({ ...p, [idx]: text }));
+    } catch (error) {
+      setProjectSummaries(p => ({ ...p, [idx]: "Error al conectar." }));
+    } finally {
+      setLoadingSummaries(p => ({ ...p, [idx]: false }));
+    }
   };
 
   const handleChatSubmit = async (e) => {
@@ -138,42 +150,48 @@ const Portfolio = () => {
     setChatMessages(p => [...p, { sender: 'user', text: userText }]);
     setChatInput('');
     setIsChatLoading(true);
-    const aiText = await GeminiService.chatWithAssistant(userText, chatMessages);
-    setChatMessages(p => [...p, { sender: 'ai', text: aiText }]);
-    setIsChatLoading(false);
+    
+    try {
+      const aiText = await GeminiService.chatWithAssistant(userText, chatMessages);
+      setChatMessages(p => [...p, { sender: 'ai', text: aiText }]);
+    } catch (error) {
+      setChatMessages(p => [...p, { sender: 'ai', text: "Error de conexión." }]);
+    } finally {
+      setIsChatLoading(false);
+    }
   };
 
   const handleSuggestSubject = async () => {
     if (!contactMessage) return;
     setIsSuggestingSubject(true);
-    const subs = await GeminiService.suggestEmailSubject(contactMessage);
-    setSuggestedSubjects(subs);
-    setIsSuggestingSubject(false);
+    try {
+      const subs = await GeminiService.suggestEmailSubject(contactMessage);
+      setSuggestedSubjects(subs);
+    } catch (e) { console.error(e); } finally {
+      setIsSuggestingSubject(false);
+    }
   };
 
-  // Handler Contacto (Notificación Móvil)
   const handleContactSubmit = async (e) => {
     e.preventDefault();
     setIsSending(true);
     try {
-      // Usamos ntfy.sh
       await fetch('https://ntfy.sh/pelayo_iot_portfolio_contact', {
         method: 'POST',
         body: `De: ${contactName} (${contactEmail})\n\n${contactMessage}`,
         headers: { 'Tags': 'rocket', 'Title': 'Nuevo Lead desde Web' }
       });
-      setIsSending(false);
       setSendSuccess(true);
       setContactName(''); setContactEmail(''); setContactMessage(''); setSuggestedSubjects([]);
       setTimeout(() => setSendSuccess(false), 5000);
     } catch (err) {
-      console.error(err);
+      alert("Error al enviar.");
+    } finally {
       setIsSending(false);
-      alert("Error al enviar. Por favor contáctame por LinkedIn.");
     }
   };
 
-  // Datos del Portafolio
+  // Datos
   const navLinks = [
     { name: 'Inicio', href: '#home' },
     { name: 'Sobre mí', href: '#about' },
@@ -233,7 +251,6 @@ const Portfolio = () => {
 
       {/* Hero Section */}
       <section id="home" className="pt-32 pb-20 relative overflow-hidden min-h-screen flex items-center">
-        {/* Fondos decorativos */}
         <div className="absolute top-20 right-0 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px] -mr-20 animate-pulse"></div>
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] -ml-20"></div>
 
@@ -266,7 +283,6 @@ const Portfolio = () => {
             </div>
           </div>
           
-          {/* Ilustración Abstracta IoT */}
           <div className="hidden lg:flex justify-center relative select-none pointer-events-none">
             <div className="relative w-96 h-96">
               <div className="absolute inset-0 border border-slate-700/50 rounded-full animate-[spin_20s_linear_infinite]"></div>
@@ -276,7 +292,6 @@ const Portfolio = () => {
                   <Server className="w-20 h-20 text-cyan-400" />
                 </div>
               </div>
-              {/* Elementos flotantes */}
               <div className="absolute top-0 left-1/2 -ml-4 bg-slate-900 p-3 rounded-xl border border-slate-700 shadow-lg animate-bounce delay-100">
                 <Wifi className="text-emerald-400 w-6 h-6" />
               </div>
@@ -363,7 +378,6 @@ const Portfolio = () => {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {projects.map((p, i) => (
               <div key={i} className="flex flex-col bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-cyan-500/30 transition-all hover:shadow-2xl hover:shadow-cyan-900/10 group">
-                {/* Header Visual */}
                 <div className="h-48 bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center relative overflow-hidden">
                   <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors"></div>
                   {p.type.includes('IoT') && <Wifi className="w-16 h-16 text-cyan-400/30 group-hover:text-cyan-400 group-hover:scale-110 transition-all duration-500" />}
@@ -508,7 +522,6 @@ const Portfolio = () => {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="py-8 bg-slate-900 border-t border-slate-800 text-center">
         <p className="text-slate-500 text-sm mb-2">
           © {new Date().getFullYear()} Pelayo López Tomé. Construido con React, Tailwind & Google Gemini.
