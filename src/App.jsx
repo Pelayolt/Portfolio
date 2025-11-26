@@ -22,9 +22,10 @@ import {
 } from 'lucide-react';
 
 // =============================================================================
-// 🔓 ZONA DE CONFIGURACIÓN
+// 🔓 ZONA DE CONFIGURACIÓN LOCAL
 // =============================================================================
-// Si quieres probarlo en local sin configurar archivos .env, pega tu clave aquí:
+// Si estás probando en tu PC y no quieres crear un archivo .env, pega tu clave aquí.
+// Si lo subes a Vercel, deja esto vacío y usa la variable de entorno.
 const PUBLIC_DEMO_API_KEY = ""; 
 // =============================================================================
 
@@ -32,16 +33,27 @@ const PUBLIC_DEMO_API_KEY = "";
 const GeminiService = {
   async generateContent(prompt) {
     let apiKey = PUBLIC_DEMO_API_KEY;
-    
+
+    // -------------------------------------------------------------------------
+    // ✅ ACTIVADO PARA VERCEL
+    // Estas líneas ahora buscan la clave en las variables de entorno de Vercel.
+    // -------------------------------------------------------------------------
     try {
-      if (!apiKey) apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    } catch (e) { console.warn("No se pudo leer env vars"); }
+      if (!apiKey && import.meta.env) {
+        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      }
+    } catch (e) { 
+      console.warn("Entorno local: no se pudo leer import.meta.env (esto es normal en ciertas pruebas)"); 
+    }
+    // -------------------------------------------------------------------------
 
     if (!apiKey) {
-      return "⚠️ Error Config: No se detecta la API Key. Si estás en local, pégala en 'PUBLIC_DEMO_API_KEY'. Si estás en Vercel, asegura que has descomentado las líneas de 'import.meta.env'.";
+      return "⚠️ Error Config: No se detecta la API Key. Asegúrate de haberla añadido en Vercel (Settings -> Environment Variables) con el nombre VITE_GEMINI_API_KEY.";
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // CORRECCIÓN: Usamos 'gemini-1.5-flash-001' en lugar del alias corto.
+    // Esto soluciona el error 404 "Model not found".
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`;
     
     try {
       const response = await fetch(url, {
@@ -52,14 +64,19 @@ const GeminiService = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+        // Mensajes de error más amigables
+        let errorMsg = `API Error ${response.status}`;
+        if (response.status === 404) errorMsg = "Modelo no disponible (404). Intenta usar 'gemini-pro'.";
+        if (response.status === 400) errorMsg = "API Key no válida (400).";
+        
+        throw new Error(errorData.error?.message || errorMsg);
       }
 
       const data = await response.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text || 'La IA no devolvió respuesta.';
     } catch (error) {
       console.error("Error Gemini:", error);
-      return `Error de conexión: ${error.message}`;
+      return `Error de conexión con IA: ${error.message}`;
     }
   },
 
@@ -155,7 +172,7 @@ const Portfolio = () => {
       const aiText = await GeminiService.chatWithAssistant(userText, chatMessages);
       setChatMessages(p => [...p, { sender: 'ai', text: aiText }]);
     } catch (error) {
-      setChatMessages(p => [...p, { sender: 'ai', text: "Error de conexión." }]);
+      setChatMessages(p => [...p, { sender: 'ai', text: "Lo siento, error de conexión con la IA." }]);
     } finally {
       setIsChatLoading(false);
     }
@@ -378,6 +395,7 @@ const Portfolio = () => {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {projects.map((p, i) => (
               <div key={i} className="flex flex-col bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-cyan-500/30 transition-all hover:shadow-2xl hover:shadow-cyan-900/10 group">
+                {/* Header Visual */}
                 <div className="h-48 bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center relative overflow-hidden">
                   <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors"></div>
                   {p.type.includes('IoT') && <Wifi className="w-16 h-16 text-cyan-400/30 group-hover:text-cyan-400 group-hover:scale-110 transition-all duration-500" />}
@@ -524,7 +542,7 @@ const Portfolio = () => {
 
       <footer className="py-8 bg-slate-900 border-t border-slate-800 text-center">
         <p className="text-slate-500 text-sm mb-2">
-          © {new Date().getFullYear()} Pelayo López Tomé. Construido con React, Tailwind & Google Gemini.
+          © {new Date().getFullYear()} Pelayo López Tomé. Construido con React & Tailwind.
         </p>
         <p className="text-xs text-slate-600 flex justify-center items-center gap-1">
           <MapPin className="w-3 h-3" /> A Coruña, Galicia
@@ -583,7 +601,7 @@ const Portfolio = () => {
                   </div>
                 </div>
               )}
-              <div ref={chatEndRef}></div>
+              <div ref={chatEndRef} />
             </div>
             
             {/* Chat Input */}
