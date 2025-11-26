@@ -22,83 +22,89 @@ import {
 } from 'lucide-react';
 
 // =============================================================================
-// 🔓 ZONA DE CONFIGURACIÓN LOCAL
+// 🔓 ZONA DE CONFIGURACIÓN
 // =============================================================================
-// Si estás probando en tu PC y no quieres crear un archivo .env, pega tu clave aquí.
-// Si lo subes a Vercel, deja esto vacío y usa la variable de entorno.
+// Pega tu clave aquí para pruebas locales.
+// Para Vercel, usa las Variables de Entorno (Settings -> Environment Variables).
 const PUBLIC_DEMO_API_KEY = ""; 
 // =============================================================================
 
-// --- Servicio de IA (Gemini) ---
+// --- Servicio de IA (Gemini con Auto-Fallback) ---
 const GeminiService = {
   async generateContent(prompt) {
     let apiKey = PUBLIC_DEMO_API_KEY;
 
-    // -------------------------------------------------------------------------
-    // ✅ ACTIVADO PARA VERCEL
-    // Estas líneas ahora buscan la clave en las variables de entorno de Vercel.
-    // -------------------------------------------------------------------------
+    // Intentamos leer la variable de entorno de forma segura para Vercel
     try {
       if (!apiKey && import.meta.env) {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       }
     } catch (e) { 
-      console.warn("Entorno local: no se pudo leer import.meta.env (esto es normal en ciertas pruebas)"); 
+      // Ignoramos errores de lectura en entornos locales estrictos
     }
-    // -------------------------------------------------------------------------
 
     if (!apiKey) {
-      return "⚠️ Error Config: No se detecta la API Key. Asegúrate de haberla añadido en Vercel (Settings -> Environment Variables) con el nombre VITE_GEMINI_API_KEY.";
+      return "⚠️ Error Config: Falta la API Key. Configúrala en Vercel o en la constante PUBLIC_DEMO_API_KEY.";
     }
 
-    // CORRECCIÓN: Usamos 'gemini-1.5-flash-001' en lugar del alias corto.
-    // Esto soluciona el error 404 "Model not found".
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`;
-    
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      });
+    // LISTA DE MODELOS A PROBAR (Si uno falla, probamos el siguiente)
+    const modelsToTry = [
+      "gemini-1.5-flash",      // Opción A: El más rápido y nuevo
+      "gemini-pro",            // Opción B: El estándar compatible (Backup)
+      "gemini-1.0-pro"         // Opción C: Versión legacy por si acaso
+    ];
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        // Mensajes de error más amigables
-        let errorMsg = `API Error ${response.status}`;
-        if (response.status === 404) errorMsg = "Modelo no disponible (404). Intenta usar 'gemini-pro'.";
-        if (response.status === 400) errorMsg = "API Key no válida (400).";
+    let lastError = null;
+
+    // Bucle de intentos
+    for (const model of modelsToTry) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         
-        throw new Error(errorData.error?.message || errorMsg);
-      }
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        });
 
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || 'La IA no devolvió respuesta.';
-    } catch (error) {
-      console.error("Error Gemini:", error);
-      return `Error de conexión con IA: ${error.message}`;
+        if (!response.ok) {
+          // Si es un error 404 (Modelo no encontrado), lanzamos error para probar el siguiente
+          if (response.status === 404) throw new Error(`Modelo ${model} no encontrado (404)`);
+          
+          // Si es otro error (ej: 400 API Key inválida), paramos aquí porque cambiar de modelo no lo arreglará
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        // ¡Éxito! Devolvemos la respuesta y salimos del bucle
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || 'La IA no devolvió respuesta.';
+
+      } catch (error) {
+        console.warn(`Fallo con el modelo ${model}:`, error.message);
+        lastError = error;
+        // Si el error NO es un 404, probablemente sea culpa de la Key, así que no seguimos probando
+        if (!error.message.includes("404")) break;
+      }
     }
+
+    return `Error de conexión: ${lastError?.message || "No se pudo conectar con ningún modelo."}`;
   },
 
   async summarizeProject(title, description) {
-    const prompt = `Actúa como un CTO evaluando candidatos. Resume este proyecto técnico en 1 frase potente (máx 25 palabras) destacando el stack tecnológico: Título: ${title}. Descripción: ${description}`;
+    const prompt = `Actúa como un CTO. Resume este proyecto técnico en 1 frase potente (máx 25 palabras) destacando el stack: Título: ${title}. Descripción: ${description}`;
     return this.generateContent(prompt);
   },
 
   async chatWithAssistant(userMessage, chatHistory) {
-    const context = `Eres "PelayoAI", el asistente virtual del ingeniero Pelayo López Tomé.
-    Objetivo: Convencer a reclutadores de que Pelayo es el candidato ideal para puestos de IoT o Full Stack.
-    Perfil: Graduado en Ingeniería Informática (UDC), Máster IoT. Experto en ESP32, MQTT, React, Docker, Linux.
-    Estilo: Breve, profesional y directo al grano.
-    Si te preguntan algo que no sea sobre Pelayo, di amablemente que solo hablas de él.`;
-    
+    const context = `Eres "PelayoAI", el asistente del ingeniero Pelayo López Tomé.
+    Vende su perfil experto en IoT (ESP32, MQTT, React, Docker). Sé breve y profesional.`;
     const history = chatHistory.slice(-4).map(m => `${m.sender}: ${m.text}`).join('\n');
     return this.generateContent(`${context}\n\nHistorial:\n${history}\n\nUsuario: ${userMessage}\nPelayoAI:`);
   },
 
   async suggestEmailSubject(messageBody) {
-    const prompt = `Lee este mensaje de contacto y dame 3 asuntos de email profesionales y cortos (separados por coma): "${messageBody}"`;
-    const resp = await this.generateContent(prompt);
+    const resp = await this.generateContent(`Sugiere 3 asuntos de email profesionales y cortos (separados por coma) para: "${messageBody}"`);
     if (resp.includes("⚠️") || resp.includes("Error")) return [resp];
     return resp.split(/,|\n/).map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
   }
@@ -143,10 +149,9 @@ const Portfolio = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Chat Scroll
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages, isChatOpen]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS BLINDADOS ---
 
   const handleSummarize = async (idx, title, desc) => {
     setLoadingSummaries(p => ({ ...p, [idx]: true }));
@@ -542,7 +547,7 @@ const Portfolio = () => {
 
       <footer className="py-8 bg-slate-900 border-t border-slate-800 text-center">
         <p className="text-slate-500 text-sm mb-2">
-          © {new Date().getFullYear()} Pelayo López Tomé. Construido con React & Tailwind.
+          © {new Date().getFullYear()} Pelayo López Tomé. Construido con React, Tailwind & Google Gemini.
         </p>
         <p className="text-xs text-slate-600 flex justify-center items-center gap-1">
           <MapPin className="w-3 h-3" /> A Coruña, Galicia
