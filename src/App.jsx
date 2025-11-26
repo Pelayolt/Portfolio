@@ -17,19 +17,20 @@ import {
   MessageSquare,
   Send,
   Sparkles,
-  Loader
+  Loader,
+  User // Importamos User para la sección Sobre mí
 } from 'lucide-react';
 
 // --- Servicio de IA (Gemini) ---
 const GeminiService = {
   async generateContent(prompt) {
 
-
     if (!apiKey) {
       try {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       } catch (e) {
-        console.error("No se pudo cargar la API Key desde las variables de entorno.", e);}
+        // Ignoramos error si no estamos en entorno Vite estándar
+      }
     }
 
     if (!apiKey) {
@@ -155,7 +156,7 @@ const Portfolio = () => {
     e.preventDefault();
     setIsSending(true);
     try {
-      // Usamos ntfy.sh (puedes cambiar 'pelayo_iot_portfolio_contact' por otro nombre único si quieres privacidad)
+      // Usamos ntfy.sh
       await fetch('https://ntfy.sh/pelayo_iot_portfolio_contact', {
         method: 'POST',
         body: `De: ${contactName} (${contactEmail})\n\n${contactMessage}`,
@@ -290,8 +291,39 @@ const Portfolio = () => {
         </div>
       </section>
 
+      {/* --- SECCIÓN SOBRE MÍ --- */}
+      <section id="about" className="py-24 bg-slate-800/30">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-center mb-8">
+              <div className="p-4 bg-slate-800 rounded-full border border-slate-700 shadow-lg">
+                <User className="w-10 h-10 text-cyan-400" />
+              </div>
+            </div>
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold text-white mb-4">Sobre mí</h2>
+              <div className="h-1 w-16 bg-cyan-500 mx-auto rounded-full"></div>
+            </div>
+            <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-8 md:p-12 rounded-3xl border border-slate-700 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+              <div className="space-y-6 text-lg text-slate-300 leading-relaxed">
+                <p>
+                  Soy graduado en <span className="text-white font-semibold">Ingeniería Informática</span> por la UDC y actualmente estoy especializándome con el Máster en <span className="text-cyan-400 font-semibold">Internet of Things (IoT)</span>.
+                </p>
+                <p>
+                  Mi pasión está en el <span className="italic text-cyan-200">Edge Computing</span>: ese punto mágico donde el hardware se encuentra con el software. Disfruto dando "vida" a objetos cotidianos, diseñando desde la PCB hasta la nube que procesa los datos.
+                </p>
+                <p>
+                  Actualmente busco oportunidades en <span className="text-white font-semibold">A Coruña</span> o remoto para aplicar mis conocimientos en sistemas embebidos, protocolos industriales y desarrollo full-stack moderno.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Skills */}
-      <section id="skills" className="py-24 bg-slate-800/30">
+      <section id="skills" className="py-24 bg-slate-900">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-16">
              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Stack Tecnológico</h2>
@@ -321,7 +353,7 @@ const Portfolio = () => {
       </section>
 
       {/* Projects */}
-      <section id="projects" className="py-24">
+      <section id="projects" className="py-24 bg-slate-800/30">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-16">
              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Proyectos Destacados</h2>
@@ -387,7 +419,7 @@ const Portfolio = () => {
       </section>
 
       {/* Contact */}
-      <section id="contact" className="py-24 bg-slate-800/30 relative">
+      <section id="contact" className="py-24 bg-slate-900 relative">
         <div className="max-w-4xl mx-auto px-4">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-8 md:p-12 rounded-3xl border border-slate-700 shadow-2xl relative overflow-hidden">
             {/* Decoración fondo */}
